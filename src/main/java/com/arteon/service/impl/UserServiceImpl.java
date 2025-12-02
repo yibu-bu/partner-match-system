@@ -6,6 +6,7 @@ import com.arteon.domain.User;
 import com.arteon.exception.BusinessException;
 import com.arteon.mapper.UserMapper;
 import com.arteon.service.UserService;
+import com.arteon.utils.AlgorithmUtils;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -297,6 +298,50 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.error("redis set error", e);
         }
         return userPage;
+    }
+
+    /**
+     * 使用编辑距离算法计算两个用户标签的相似度，为当前用户推荐相似用户
+     *
+     * @param num  返回的用户数量
+     * @param user 当前用户
+     * @return List of User
+     */
+    @Override
+    public List<User> matchUsers(long num, User user) {
+        // 查询所有用户，提取所有的tags作为一个List<String>
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("id", "tags");  // 只查询这两个字段
+        queryWrapper.isNotNull("tags");       // 要求tags字段不能为空
+        List<User> userList = this.list(queryWrapper);
+        // 如果没查到数据直接抛异常
+        if (userList == null || userList.isEmpty()) {
+            throw new BusinessException(ErrorCode.NULL_ERROR);
+        }
+        Gson gson = new Gson();
+        // 获取当前用户的tags
+        List<String> currentUserTagList = gson.fromJson(user.getTags(), new TypeToken<List<String>>() {
+        }.getType());
+        // 依次使用编辑距离算法匹配，使用TreeMap存储结果，相似度作为key，User作为value，然后取前num个User返回即可
+        TreeMap<Integer, User> treeMap = new TreeMap<>();
+        for (User u : userList) {
+            String tags = u.getTags();
+            // 将标签Json串转成List
+            List<String> userTagList = gson.fromJson(tags, new TypeToken<List<String>>() {
+            }.getType());
+            // 使用编辑距离算法计算用户相似度
+            int i = AlgorithmUtils.minDistance(userTagList, currentUserTagList);
+            treeMap.put(i, u);
+        }
+        ArrayList<User> finalUserList = new ArrayList<>();
+        Set<Integer> keySet = treeMap.keySet();  // 经过查阅资料，虽然返回的是Set，但是源码实现保证了有序
+        for (Integer i : keySet) {
+            if (finalUserList.size() >= num) {
+                break;
+            }
+            finalUserList.add(this.getSafetyUser(treeMap.get(i)));
+        }
+        return finalUserList;
     }
 
 }

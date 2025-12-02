@@ -80,4 +80,13 @@ public interface UserService extends IService<User> {
 
     Page<User> recommendUsers(long pageNum, long pageSize, User loginUser);
 
+    /**
+     * 使用编辑距离算法计算两个用户标签的相似度，为当前用户推荐相似用户
+     *
+     * @param num  返回的用户数量
+     * @param user 当前用户
+     * @return List of User
+     */
+    List<User> matchUsers(long num, User user);
+
 }
